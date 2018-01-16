@@ -4,6 +4,7 @@ This code is used to test for fast cuda kernels used in DNN inference, especiall
 - Convolution (3 * 3 * 128, 3 * 3 * 256)
 - Batch Nomalization (BN + Scale)
 - Activation (ReLU)
+For implementation details, please refer to my technical report: http://xuqiantong.github.io/cuda_kernel.pdf.
 
 ## Usage
 ``` sh
