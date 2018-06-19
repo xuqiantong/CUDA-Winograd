@@ -5,7 +5,7 @@ This code is used to test for fast cuda kernels used in DNN inference, especiall
 - Batch Nomalization (BN + Scale)
 - Activation (ReLU)
 
-For implementation details, please refer to my technical report: http://xuqiantong.github.io/cuda_kernel.pdf.
+For implementation details, please refer to the technical report included in this repo.
 
 ## Usage
 ``` sh
