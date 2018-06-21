@@ -1,11 +1,11 @@
 ## Introduction
 
-This code is used to test for fast cuda kernels used in DNN inference, especially in ResNet. Specifically, the kernels combine three parts into one piece:
-- Convolution (3 * 3 * 128, 3 * 3 * 256)
+This code implements fast cuda kernels for DNN inference, especially for convolution layers / residule blocks in ResNet. Specifically, the kernels combine three parts into one piece:
+- Convolution
 - Batch Nomalization (BN + Scale)
 - Activation (ReLU)
 
-For implementation details, please refer to the technical report included in this repo.
+For implementation details, please refer to the technical report included in this repo. Winograd algorithm is used for 3 * 3 convolutional kernels. 
 
 ## Usage
 ``` sh
