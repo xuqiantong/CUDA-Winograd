@@ -27,7 +27,7 @@ __global__ void kernel_512_one_128(float *A, float *B, float *bnBias, float *bnS
 
 	extern __shared__ float shared_[];
 	float *weights = shared_ + 512*4, *output = weights + 128*64, *input = shared_;
-	float *bias = output + 4*128, *scale = bias + 128; 
+	float *bias = output + 4*128, *scale = bias + 128;
 
 	for (int i = 0; i < 4; i++)
 		input[ind + i*512] = A[tile*2048 + i*512 + ind];
@@ -36,12 +36,13 @@ __global__ void kernel_512_one_128(float *A, float *B, float *bnBias, float *bnS
 	output[ind] = 0.0f;
 	__syncthreads();
 
-	for (int k = 0; k < 128; k += 16) {
+	for (int k = 0; k < 512; k += 64) {
+		float *B_start = B + k*128;
 		for (int i = 0; i < 16; i++)
-			weights[ind + i*512] = B[(k+i)*512 + ind];
+			weights[ind + i*512] = B_start[i*512 + ind];
 		__syncthreads();
 
-		float *A_start = input + k*64;
+		float *A_start = input + k;
 		for (int p = 0; p < 64; p++) {
 			output[ind] += A_start[line*512 + p] * weights[in_channel + p*128];
 		}
@@ -49,7 +50,7 @@ __global__ void kernel_512_one_128(float *A, float *B, float *bnBias, float *bnS
 	}
 
 	float *C_start = C + tile*512, res = scale[in_channel] * output[ind] + bias[in_channel];
-	C_start[ind] = res > 0 ? res : 0;	
+	C_start[ind] = res > 0 ? res : 0;
 }
 
 
@@ -86,11 +87,11 @@ int kernel_128_1_in() {
 	cudaMalloc((void **) &bnScale_, 128<<2);
 
 	cudaMemcpy(input_, input, nInput<<2, cudaMemcpyHostToDevice);
-	cudaMemcpy(weight_, weight_, nWeights<<2, cudaMemcpyHostToDevice);
+	cudaMemcpy(weight_, weight, nWeights<<2, cudaMemcpyHostToDevice);
 	cudaMemcpy(bnBias_, bnBias_myKernel, 128<<2, cudaMemcpyHostToDevice);
 	cudaMemcpy(bnScale_, bnScale_myKernel, 128<<2, cudaMemcpyHostToDevice);
 
-	
+
 	/*  2. Computing  */
 	nT1 = getTimeMicroseconds64();
 
@@ -98,9 +99,9 @@ int kernel_128_1_in() {
 
 	//cudaCheckError();
 	cudaDeviceSynchronize();
-	
+
 	nT2 = getTimeMicroseconds64();
-	printf("TotalTime = %d us\n", nT2-nT1); 
+	printf("TotalTime = %d us\n", nT2-nT1);
 
 
 	/*  3. Copy back and free  */
@@ -126,6 +127,9 @@ int kernel_128_1_in() {
 	cudaMemcpy(bnScale_, bnScale, 128<<2, cudaMemcpyHostToDevice);
 	cudaMemcpy(eMeanName_, eMeanName, 128<<2, cudaMemcpyHostToDevice);
 	cudaMemcpy(eVarName_, eVarName, 128<<2, cudaMemcpyHostToDevice);
+
+	weight = transpose(weight, 128, 512);
+	cudaMemcpy(weight_, weight, nWeights<<2, cudaMemcpyHostToDevice);
 
 	/*  2. cuDNN preparation  */
 	cudnnStatus_t status;
@@ -158,7 +162,7 @@ int kernel_128_1_in() {
 	if (status != CUDNN_STATUS_SUCCESS) printf("failed11\n");
 
 	cudnnActivationDescriptor_t act_desc;
-	status = cudnnCreateActivationDescriptor(&act_desc);  
+	status = cudnnCreateActivationDescriptor(&act_desc);
 	if (status != CUDNN_STATUS_SUCCESS) printf("failed12\n");
 	status = cudnnSetActivationDescriptor(act_desc, CUDNN_ACTIVATION_RELU, CUDNN_NOT_PROPAGATE_NAN, 0);
 	if (status != CUDNN_STATUS_SUCCESS) printf("failed13\n");
@@ -186,14 +190,14 @@ int kernel_128_1_in() {
 	nT1_cudnn = getTimeMicroseconds64();
 
 	status = cudnnConvolutionForward(handle, &one,
-		xdesc, input_, wdesc, weight_, 
-		conv_desc, algo, 
+		xdesc, input_, wdesc, weight_,
+		conv_desc, algo,
 		extra, size, &zero,
 		ydesc, output_);
 	if (status != CUDNN_STATUS_SUCCESS) printf("Not Successed1\n");
 
 	status = cudnnBatchNormalizationForwardInference(handle, CUDNN_BATCHNORM_SPATIAL,
-		&one, &zero, 
+		&one, &zero,
 		ydesc, output_, ydesc, output_,
 		bnScaleBiasMeanVarDesc, bnScale_, bnBias_, eMeanName_, eVarName_, CUDNN_BN_MIN_EPSILON);
 	if (status != CUDNN_STATUS_SUCCESS) printf("Not Successed2\n");
@@ -243,7 +247,7 @@ __global__ void kernel_128_one_512(float *A, float *B, float *bnBias, float *bnS
 
 	extern __shared__ float shared_[];
 	float *weights = shared_ + 128*4, *output = weights + 128*64, *input = shared_;
-	float *bias = output + 4*128, *scale = bias + 128; 
+	float *bias = output + 4*128, *scale = bias + 128;
 
 	input[ind] = A[tile * 512 + ind];
 	bias[in_channel] = bnBias[part*128 + in_channel];
@@ -251,12 +255,12 @@ __global__ void kernel_128_one_512(float *A, float *B, float *bnBias, float *bnS
 	output[ind] = 0.0f;
 	__syncthreads();
 
-	for (int k = 0; k < 32; k += 16) {
+	for (int k = 0; k < 128; k += 64) {
 		for (int i = 0; i < 16; i++)
-			weights[ind + 512*i] = B[(k+i)*2048 + part*128 + in_channel + line*512];
+			weights[ind + 512*i] = B[(k + i*4 + line)*512 + part*128 + in_channel];
 		__syncthreads();
 
-		float *A_start = input + k*64;
+		float *A_start = input + k;
 		for (int p = 0; p < 64; p++) {
 			output[ind] += A_start[line*128 + p] * weights[in_channel + p*128];
 		}
@@ -264,7 +268,8 @@ __global__ void kernel_128_one_512(float *A, float *B, float *bnBias, float *bnS
 	}
 
 	float *C_start = C + tile*2048 + part*128;
-	C_start[line * 512 + in_channel] = scale[in_channel] * output[ind] + bias[in_channel];
+	float res = scale[in_channel] * output[ind] + bias[in_channel];
+	C_start[line * 512 + in_channel] = res;
 }
 
 
@@ -301,11 +306,10 @@ int kernel_128_1_out() {
 	cudaMalloc((void **) &bnScale_, 512<<2);
 
 	cudaMemcpy(input_, input, nInput<<2, cudaMemcpyHostToDevice);
-	cudaMemcpy(weight_, weight_, nWeights<<2, cudaMemcpyHostToDevice);
+	cudaMemcpy(weight_, weight, nWeights<<2, cudaMemcpyHostToDevice);
 	cudaMemcpy(bnBias_, bnBias_myKernel, 512<<2, cudaMemcpyHostToDevice);
 	cudaMemcpy(bnScale_, bnScale_myKernel, 512<<2, cudaMemcpyHostToDevice);
 
-	
 	/*  2. Computing  */
 	nT1 = getTimeMicroseconds64();
 
@@ -313,9 +317,9 @@ int kernel_128_1_out() {
 
 	//cudaCheckError();
 	cudaDeviceSynchronize();
-	
+
 	nT2 = getTimeMicroseconds64();
-	printf("TotalTime = %d us\n", nT2-nT1); 
+	printf("TotalTime = %d us\n", nT2-nT1);
 
 
 	/*  3. Copy back and free  */
@@ -341,6 +345,9 @@ int kernel_128_1_out() {
 	cudaMemcpy(bnScale_, bnScale, 512<<2, cudaMemcpyHostToDevice);
 	cudaMemcpy(eMeanName_, eMeanName, 512<<2, cudaMemcpyHostToDevice);
 	cudaMemcpy(eVarName_, eVarName, 512<<2, cudaMemcpyHostToDevice);
+
+	weight = transpose(weight, 512, 128);
+	cudaMemcpy(weight_, weight, nWeights<<2, cudaMemcpyHostToDevice);
 
 	/*  2. cuDNN preparation  */
 	cudnnStatus_t status;
@@ -395,14 +402,14 @@ int kernel_128_1_out() {
 	nT1_cudnn = getTimeMicroseconds64();
 
 	status = cudnnConvolutionForward(handle, &one,
-		xdesc, input_, wdesc, weight_, 
-		conv_desc, algo, 
+		xdesc, input_, wdesc, weight_,
+		conv_desc, algo,
 		extra, size, &zero,
 		ydesc, output_);
 	if (status != CUDNN_STATUS_SUCCESS) printf("Not Successed1\n");
 
 	status = cudnnBatchNormalizationForwardInference(handle, CUDNN_BATCHNORM_SPATIAL,
-		&one, &zero, 
+		&one, &zero,
 		ydesc, output_, ydesc, output_,
 		bnScaleBiasMeanVarDesc, bnScale_, bnBias_, eMeanName_, eVarName_, CUDNN_BN_MIN_EPSILON);
 	if (status != CUDNN_STATUS_SUCCESS) printf("Not Successed2\n");
@@ -438,5 +445,3 @@ int kernel_128_1_out() {
 
 	return ((nT2-nT1) << 16) | (nT2_cudnn-nT1_cudnn);
 }
-
-

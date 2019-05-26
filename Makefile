@@ -9,28 +9,14 @@ COBJS := $(subst .c,.o,$(CSRCS))
 CUSRCS := $(shell find . -name '*.cu' -not -name '._*')
 CUOBJS := $(subst .cu,.o,$(CUSRCS))
 
-#ALLOBJS := $(COBJS)
-#ALLOBJS += $(CUOBJS)
-
-LIBDIR := -L/usr/local/cuda/lib64 -L/home/ys646/lib/cudnn/lib64/
-#-L/usr/local/cudnn5/lib64
-
-CFLAGS= \
--I. \
--fPIC \
--I/usr/local/cuda/inlclude
+LIBDIR := -L/usr/local/cuda/lib64
 
 CUFLAGS= \
 -I. \
 -Xcompiler \
--fPIC \
--I/usr/local/cuda/inlclude \
--g
+-fPIC
 
 LDFLAGS=-L. -lm -lpthread -lrt
-
-#CFLAGS+=-Ofast
-CFLAGS+= -O3 -ffast-math -mavx -mfma
 
 all: Test
 
@@ -40,11 +26,9 @@ all: Test
 %.o: %.cu
 	$(NVCC) $(CUFLAGS) -c $< -o $(basename $@).o
 
-Test: $(CUOBJS) $(COBJS) 
-	$(NVCC) -o Test $(CUOBJS) $(COBJS) $(LIBDIR) $(LDFLAGS) -lcudart -lcuda -lstdc++ -lcudnn -lcublas
-	
+Test: $(CUOBJS) $(COBJS)
+	$(NVCC) -o Test $(CUOBJS) $(COBJS) $(LIBDIR) $(LDFLAGS) -lcudart -lcuda -lcublas -lcudnn
+
 clean:
 	find . -name "*.o" -exec rm -f '{}' ';'
 	rm -f Test
-
-
